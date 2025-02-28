@@ -4,15 +4,58 @@ from typing import Callable, Union
 from ...abstracts import AbcRender
 from ...types import Observation, Action
 from ...utils import is_debugging_all
-from ..env import SailboatEnv
-from .lsa_sim import LSASim
+from ..env import VesselEnv
 
 
-class SailboatLSAEnv(SailboatEnv):
+zero_values = {
+    'p_boat': np.zeros(2, dtype=np.float32),
+    'theta_boat': np.zeros(1, dtype=np.float32),
+    'dt_p_boat': np.zeros(2, dtype=np.float32),
+    'dt_theta_boat': np.zeros(1, dtype=np.float32),
+    'rpm_me': np.zeros(1, dtype=np.float32),
+    'dt_rpm_me': np.zeros(1, dtype=np.float32),
+    'theta_rudder': np.zeros(1, dtype=np.float32),
+    'dt_theta_rudder': np.zeros(1, dtype=np.float32),
+    'N_thrusters': np.zeros(2, dtype=np.float32),
+    'wind': np.zeros(2, dtype=np.float32),
+    'water': np.zeros(2, dtype=np.float32),
+    'wave': np.zeros(2, dtype=np.float32),
+}
+
+map_bounds = {
+    'map_bounds': np.array([[   -500., -500.,    0.], [ 500.,  500.,    1.]], dtype=np.float32)
+}
+
+def dummy_update(obs_dict):
+    
+    obs_dict['p_boat'][0] += 0.1
+    obs_dict['p_boat'][1] += 1  
+    obs_dict['theta_boat'][0] += np.deg2rad(2) 
+
+    obs_dict['dt_p_boat'][0] = 0.5
+    obs_dict['dt_p_boat'][1] = 1.0  
+    obs_dict['dt_theta_boat'][0] = -np.deg2rad(2) 
+
+
+
+    obs_dict['theta_rudder'][0] += np.deg2rad(1)/10. 
+
+    return obs_dict
+
+
+class ShipEnv(VesselEnv):
     NB_STEPS_PER_SECONDS = 10  # Hz
 
-    def __init__(self, reward_fn: Callable[[Observation, Action, Observation], float] = lambda *_: 0, renderer: Union[AbcRender, None] = None, wind_generator_fn: Union[Callable[[int], np.ndarray], None] = None, water_generator_fn: Union[Callable[[int], np.ndarray], None] = None, video_speed: float = 1, keep_sim_alive: bool = False, name='default', map_scale=1, stop_condition_fn: Callable[[Observation, Action, Observation], bool] = lambda *_: False):
-        """Sailboat LSA environment
+    def __init__(self, reward_fn: Callable[[Observation, Action, Observation], float] = lambda *_: 0, 
+                 renderer: Union[AbcRender, None] = None, 
+                 wind_generator_fn: Union[Callable[[int], np.ndarray], None] = None, 
+                 water_generator_fn: Union[Callable[[int], np.ndarray], None] = None, 
+                 video_speed: float = 1, 
+                 keep_sim_alive: bool = False, 
+                 name='default', 
+                 map_scale=1, 
+                 stop_condition_fn: Callable[[Observation, Action, Observation], bool] = lambda *_: False):
+        """Ship environment
 
         Args:
             reward_fn (Callable[[Observation, Action], float], optional): Use a custom reward function depending of your task. Defaults to lambda *_: 0.
@@ -52,7 +95,6 @@ class SailboatLSAEnv(SailboatEnv):
         self.map_scale = map_scale
         self.keep_sim_alive = keep_sim_alive
         self.step_idx = 0
-        self.sim = LSASim(self.name)
 
     def reset(self, seed=None, **kwargs):
         super().reset(seed=seed, **kwargs)
@@ -63,8 +105,11 @@ class SailboatLSAEnv(SailboatEnv):
         wind = self.wind_generator_fn(self.step_idx)
         water = self.water_generator_fn(self.step_idx)
 
-        self.obs, info = self.sim.reset(wind, water, self.NB_STEPS_PER_SECONDS)
-
+        # replace this 
+        # self.obs, info = self.sim.reset(wind, water, self.NB_STEPS_PER_SECONDS)
+        self.obs = zero_values
+        info = map_bounds
+        
         # setup the renderer, its needed to know the min/max position of the boat
         if self.renderer:
             self.renderer.setup(info['map_bounds'] * self.map_scale)
@@ -87,7 +132,12 @@ class SailboatLSAEnv(SailboatEnv):
         wind = self.wind_generator_fn(self.step_idx)
         water = self.water_generator_fn(self.step_idx)
 
-        next_obs, terminated, info = self.sim.step(wind, water, action)
+        # replace this 
+        # next_obs, terminated, info = self.sim.step(wind, water, action)
+        next_obs = dummy_update(self.obs) 
+        terminated = False
+        info = map_bounds
+
         reward = self.reward_fn(self.obs, action, next_obs)
         truncated = self.stop_condition_fn(self.obs, action, next_obs)
         self.obs = next_obs
@@ -110,9 +160,4 @@ class SailboatLSAEnv(SailboatEnv):
         return self.renderer.render(self.obs)
 
     def close(self):
-        self.sim.close()
         self.obs = None
-
-    def __del__(self):
-        if not self.keep_sim_alive:
-            self.sim.stop()

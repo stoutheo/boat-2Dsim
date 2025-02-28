@@ -1,10 +1,10 @@
 from gymnasium.envs.registration import register
 
-from .sailboat_lsa import SailboatLSAEnv
+from .sailboat_lsa import ShipEnv
 from .env import *
 
 env_by_name = {
-    'SailboatLSAEnv-v0': SailboatLSAEnv,
+    'ShipEnv-v0': ShipEnv,
 }
 
 for name, env in env_by_name.items():

@@ -1,1 +1,1 @@
-from .lsa_env import SailboatLSAEnv
+from .lsa_env import ShipEnv

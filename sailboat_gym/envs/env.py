@@ -12,7 +12,7 @@ class Metadata(TypedDict):
     render_fps: float
 
 
-class SailboatEnv(gym.Env, metaclass=ProfilingMeta):
+class VesselEnv(gym.Env, metaclass=ProfilingMeta):
     NB_STEPS_PER_SECONDS: int  # Hz
 
     render_mode: str
