@@ -1,7 +1,6 @@
 from gymnasium.envs.registration import register
 
-from .sailboat_lsa import ShipEnv
-from .env import *
+from .env import ShipEnv
 
 env_by_name = {
     'ShipEnv-v0': ShipEnv,
@@ -10,5 +9,5 @@ env_by_name = {
 for name, env in env_by_name.items():
     register(
         id=name,
-        entry_point=f'sailboat_gym.envs:{env.__name__}',
+        entry_point=f'marine_gym.envs:{env.__name__}',
     )

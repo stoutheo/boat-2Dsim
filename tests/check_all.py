@@ -1,4 +1,4 @@
-from sailboat_gym import env_by_name, is_debugging
+from marine_gym import env_by_name, is_debugging
 
 from .check_env import check_env_implementation
 

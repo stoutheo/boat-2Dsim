@@ -1,6 +1,6 @@
 import gymnasium as gym
 from typing import Any, Tuple, Callable, Type, TypedDict
-from sailboat_gym import SailboatEnv
+from marine_gym import SailboatEnv
 
 
 def check_env_implementation(env: Type[SailboatEnv]):

@@ -4,7 +4,7 @@ import gymnasium as gym
 from gymnasium.wrappers.time_limit import TimeLimit
 from gymnasium.wrappers.record_video import RecordVideo
 
-from sailboat_gym import CV2DRenderer, Observation, get_best_sail
+from marine_gym import CV2DRenderer, Observation, get_best_sail
 
 
 theta_wind = np.deg2rad(90)

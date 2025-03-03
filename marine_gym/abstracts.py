@@ -21,7 +21,7 @@ class AbcRender(metaclass=ABCProfilingMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def setup(self, map_bounds: np.ndarray[2, 3]) -> None:
+    def setup(self, map_bounds: np.ndarray[2, 3],  ref_path: np.ndarray[2, :] = None) -> None:
         raise NotImplementedError
 
     @abstractmethod

@@ -1,9 +1,9 @@
 import gymnasium as gym
 from gymnasium.wrappers.record_video import RecordVideo
-import sailboat_gym
+import marine_gym
 import cv2
 
-env = gym.make('ShipEnv-v0', renderer=sailboat_gym.CV2DRenderer())
+env = gym.make('ShipEnv-v0', renderer=marine_gym.CV2DRenderer())
 # env = RecordVideo(env, video_folder='./output/videos/')
 
 env.reset(seed=10)
