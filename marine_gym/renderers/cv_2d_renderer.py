@@ -34,7 +34,7 @@ def rotate_vector(vector: np.ndarray, angle: float):
     ])
     return rot @ vector
 
-def draw_rotation_vector(img, center, radius, start_angle, end_angle, color, thickness):
+def draw_rotation_vector(img, center, radius, start_angle, end_angle, angular_velocity, color, thickness):
     """
     Draws a rotational vector as a curved arrow.
     
@@ -57,8 +57,13 @@ def draw_rotation_vector(img, center, radius, start_angle, end_angle, color, thi
 
     arrowhead_size = 8  # Reduce arrowhead size
 
-    # Compute arrowhead direction (perpendicular to the arc at the end point)
-    tangent_angle = angle_rad + np.pi / 2  #+ np.pi / 4 # Perpendicular to the arc
+    # Determine the direction of the arrowhead based on angular velocity
+    if angular_velocity < 0:  # Clockwise (positive angular velocity)
+        tangent_angle = angle_rad + np.pi / 2  # Perpendicular to the arc
+    else:  # Counterclockwise (negative angular velocity)
+        tangent_angle = angle_rad - np.pi / 2  # Perpendicular to the arc in opposite direction
+
+    # Compute the arrowhead points
     arrow_end1 = (
         int(arrow_tip[0] + arrowhead_size * np.cos(tangent_angle - np.pi / 4)),
         int(arrow_tip[1] + arrowhead_size * np.sin(tangent_angle - np.pi / 4))
@@ -71,9 +76,10 @@ def draw_rotation_vector(img, center, radius, start_angle, end_angle, color, thi
     # Draw the arc
     cv2.ellipse(img, center, (radius, radius), 0, start_angle, end_angle, color, thickness, lineType=cv2.LINE_AA)
 
-    # Draw the arrowhead
-    cv2.line(img, arrow_tip, arrow_end1, color, thickness, lineType=cv2.LINE_AA)
-    cv2.line(img, arrow_tip, arrow_end2, color, thickness, lineType=cv2.LINE_AA)
+    if np.abs(angular_velocity) > 0.001:
+        # Draw the arrowhead
+        cv2.line(img, arrow_tip, arrow_end1, color, thickness, lineType=cv2.LINE_AA)
+        cv2.line(img, arrow_tip, arrow_end2, color, thickness, lineType=cv2.LINE_AA)
 
 
 
@@ -97,7 +103,7 @@ class RendererObservation(metaclass=ProfilingMeta):
         self.rpm = obs["rpm_me"][0]
 
         # Rudder
-        self.theta_rudder = np.pi + self.theta_boat + obs["theta_rudder"][0]
+        self.theta_rudder = obs["theta_rudder"][0]
         self.dt_rudder = np.abs(obs["dt_theta_rudder"][0]) * \
             - angle_to_vec_X(-np.pi/2 + self.theta_rudder + np.sign(obs["dt_theta_rudder"][0]) * np.pi / 2)  # is either -90 or 90 degrees   
  
@@ -113,13 +119,13 @@ class RendererObservation(metaclass=ProfilingMeta):
 
 
         # wind
-        self.wind = -angle_to_vec_Y_naval(np.deg2rad(obs["wind"][0])) * obs["wind"][1]
+        self.wind = -angle_to_vec_Y_naval(obs["wind"][0]) * obs["wind"][1]
 
-        # water
-        self.water = angle_to_vec_Y_naval(np.deg2rad(obs["water"][0])) * obs["water"][1]
+        # current
+        self.current = angle_to_vec_Y_naval(obs["current"][0]) * obs["current"][1]
 
         # wave
-        self.wave = -angle_to_vec_Y_naval(np.deg2rad(obs["wave"][0])) * obs["wave"][1]
+        self.wave = -angle_to_vec_Y_naval(obs["wave"][0]) * obs["wave"][1]
 
 
 class CV2DRenderer(AbcRender):
@@ -159,7 +165,7 @@ class CV2DRenderer(AbcRender):
             },
             "rpm": {
                 "color": RED,
-                "width": 2,
+                "width": 1,
                 "height": 10,
                 "dt_rpm": {
                     "color": RED,
@@ -168,7 +174,7 @@ class CV2DRenderer(AbcRender):
             },
             "rudder": {
                 "color": rgba(BLACK, .3),
-                "width": 4,
+                "width": 2,
                 "height": 10,
                 "dt_theta": {
                     "color": RED,
@@ -177,7 +183,7 @@ class CV2DRenderer(AbcRender):
             },
             "thrusters": {
                 "color": rgba(RED, .3),
-                "width": 2,
+                "width": 1,
                 "height": 10,
             },
             "sail": {
@@ -193,7 +199,7 @@ class CV2DRenderer(AbcRender):
                 "color": rgba(BLUE, .5),
                 "width": 2,
             },
-            "water": {
+            "current": {
                 "color": rgba(CYAN, .5),
                 "width": 2,
             },
@@ -226,7 +232,7 @@ class CV2DRenderer(AbcRender):
         obs.dt_rudder = self._scale_to_fit_in_img(obs.dt_rudder)
         # obs.dt_sail = self._scale_to_fit_in_img(obs.dt_sail)
         obs.wind = self._scale_to_fit_in_img(obs.wind)
-        obs.water = self._scale_to_fit_in_img(obs.water)
+        obs.current = self._scale_to_fit_in_img(obs.current)
         obs.wave = self._scale_to_fit_in_img(obs.wave)
 
         obs.bow_thruster = self._scale_to_fit_in_img(obs.bow_thruster)
@@ -255,14 +261,14 @@ class CV2DRenderer(AbcRender):
                         tipLength=0.2,
                         line_type=cv2.LINE_AA)
 
-    def _draw_water(self, img: np.ndarray, obs: RendererObservation):
+    def _draw_current(self, img: np.ndarray, obs: RendererObservation):
         img_center = np.array([2*self.padding, 2*self.padding])  
         cv2.arrowedLine(img,
                         tuple(img_center.astype(int)),
-                        tuple((img_center + obs.water *
+                        tuple((img_center + obs.current *
                               self.vector_scale).astype(int)),
-                        self.style["water"]["color"],
-                        self.style["water"]["width"],
+                        self.style["current"]["color"],
+                        self.style["current"]["width"],
                         tipLength=0.2,
                         line_type=cv2.LINE_AA)
         
@@ -333,8 +339,8 @@ class CV2DRenderer(AbcRender):
             length=boat_length,
             bow=bow_extension,
             scale=scale,
-            x=obs.p_boat[0],
-            y=obs.p_boat[1],
+            x=obs.p_boat[1],
+            y=obs.p_boat[0],
             theta=obs.theta_boat
         )
 
@@ -360,9 +366,12 @@ class CV2DRenderer(AbcRender):
         rudder_height = self.style["rudder"]["height"]
         boat_phi = self.style["boat"]["phi"]
         boat_size = self.style["boat"]["size"]
-        back_of_boat = obs.p_boat - angle_to_vec_Y_naval(obs.theta_boat) * boat_size*self.internal_scaling
+
+        back_of_boat = obs.p_boat[::-1] - angle_to_vec_Y_naval(obs.theta_boat) * boat_size*self.internal_scaling
         rudder_start = back_of_boat
-        rudder_end = rudder_start - angle_to_vec_X(-np.pi/2 + obs.theta_rudder) * rudder_height
+        rudder_end = rudder_start - angle_to_vec_Y_naval(-(-obs.theta_boat + obs.theta_rudder)) * rudder_height
+        
+        # - angle_to_vec_X(-np.pi/2 + obs.theta_rudder) * rudder_height
         cv2.line(img,
                  tuple(rudder_start.astype(int)),
                  tuple(rudder_end.astype(int)),
@@ -372,10 +381,11 @@ class CV2DRenderer(AbcRender):
         
     def _draw_me_rpm(self, img: np.ndarray, obs: RendererObservation):
         boat_size = self.style["boat"]["size"]
-        propeller_start = obs.p_boat - angle_to_vec_Y_naval(obs.theta_boat) * boat_size*self.internal_scaling/2
+        # reverse the vector because marine coordinate system is flipped y-x
+        propeller_start = obs.p_boat[::-1] - angle_to_vec_Y_naval(obs.theta_boat) * boat_size*self.internal_scaling/2
         propeller_end = propeller_start - angle_to_vec_Y_naval(obs.theta_boat) * obs.rpm  / 10
         cv2.arrowedLine(img,
-                        tuple(propeller_start.astype(int)),
+                        tuple(propeller_start.astype(int))  ,
                         tuple(propeller_end.astype(int)),
                         self.style["rpm"]["color"],
                         self.style["rpm"]["width"],
@@ -385,7 +395,9 @@ class CV2DRenderer(AbcRender):
     
     def _draw_thrusters(self, img: np.ndarray, obs: RendererObservation):
         boat_size = self.style["boat"]["size"]
-        bow_thruster_start = obs.p_boat + angle_to_vec_Y_naval(obs.theta_boat) * 7*boat_size*self.internal_scaling/8.
+
+        # reverse the vector because marine coordinate system is flipped y-x
+        bow_thruster_start = obs.p_boat[::-1] + angle_to_vec_Y_naval(obs.theta_boat) * 7*boat_size*self.internal_scaling/8.
         bow_thruster_end = bow_thruster_start + obs.bow_thruster * self.vector_scale / 60000 # manual scaling to be changed
 
         cv2.arrowedLine(img,
@@ -396,7 +408,8 @@ class CV2DRenderer(AbcRender):
                         tipLength=.2,
                         line_type=cv2.LINE_AA)
         
-        stern_thruster_start = obs.p_boat - angle_to_vec_Y_naval(obs.theta_boat) * 7*boat_size*self.internal_scaling/8.
+        # reverse the vector because marine coordinate system is flipped y-x
+        stern_thruster_start = obs.p_boat[::-1] - angle_to_vec_Y_naval(obs.theta_boat) * 7*boat_size*self.internal_scaling/8.
         stern_thruster_end = stern_thruster_start + obs.stern_thruster * self.vector_scale / 60000 # manual scaling to be changed
         cv2.arrowedLine(img,
                         tuple(stern_thruster_start.astype(int)),
@@ -407,12 +420,11 @@ class CV2DRenderer(AbcRender):
                         line_type=cv2.LINE_AA)
         
     def _draw_boat_pos_velocity(self, img: np.ndarray, obs: RendererObservation):
-        obs.dt_p_boat
         dt_p_boat_start = obs.p_boat
         dt_p_boat_end = dt_p_boat_start + obs.dt_p_boat * self.vector_scale
         cv2.arrowedLine(img,
-                        tuple(dt_p_boat_start.astype(int)),
-                        tuple(dt_p_boat_end.astype(int)),
+                        tuple(dt_p_boat_start.astype(int))[::-1],  # reverse the tuple because marine coordinate system is flipped y-x
+                        tuple(dt_p_boat_end.astype(int))[::-1],    # reverse the tuple because marine coordinate system is flipped y-x
                         self.style["boat"]["dt_p"]["color"],
                         self.style["boat"]["dt_p"]["width"],
                         tipLength=.2,
@@ -421,28 +433,38 @@ class CV2DRenderer(AbcRender):
     def _draw_boat_heading_velocity(self, img: np.ndarray, obs: RendererObservation):
         spike_coeff = self.style["boat"]["spike_coef"]
         boat_size = self.style["boat"]["size"]
-        front_of_boat = obs.p_boat + \
+
+        # reverse the vector because marine coordinate system is flipped y-x
+        front_of_boat = obs.p_boat[::-1] + \
             angle_to_vec_Y_naval(obs.theta_boat) * spike_coeff * boat_size*self.internal_scaling
-        obs.dt_p_boat
+ 
         dt_theta_boat_vec_start = front_of_boat
         dt_theta_boat_vec_end = dt_theta_boat_vec_start + obs.dt_theta_boat_vec * self.vector_scale
          
         radius = 10  # Size of arc
         start_angle = 0  # Starting angle of the arc
-        end_angle = np.rad2deg(obs.dt_theta_boat * self.vector_scale)  # Ending angle of the arc
+        end_angle = -np.rad2deg(obs.dt_theta_boat) * self.vector_scale * 10 # Ending angle of the arc
+        angular_velocity = -np.rad2deg(obs.dt_theta_boat)
         color = (0, 200, 0)  # Green color
         thickness = 1  # Thickness of arc and lines
-        draw_rotation_vector(img, tuple(obs.p_boat.astype(int)),  radius, start_angle, end_angle, color, thickness)
+        draw_rotation_vector(img, 
+                             tuple(obs.p_boat.astype(int))[::-1],   # reverse the tuple because marine coordinate system is flipped y-x
+                             radius, 
+                             start_angle, 
+                             end_angle, 
+                             angular_velocity,
+                             color, 
+                             thickness)
 
 
     def _draw_rudder_velocity(self, img: np.ndarray, obs: RendererObservation):
         boat_phi = self.style["boat"]["phi"]
         boat_size = self.style["boat"]["size"]
         rudder_height = self.style["rudder"]["height"]
-        back_of_boat = obs.p_boat - angle_to_vec_Y_naval(obs.theta_boat) * boat_size*self.internal_scaling
-        rudder_end = back_of_boat - angle_to_vec_X(-np.pi/2 + obs.theta_rudder) * rudder_height
+        back_of_boat = obs.p_boat[::-1] - angle_to_vec_Y_naval(obs.theta_boat) * boat_size*self.internal_scaling
+        rudder_end = back_of_boat - angle_to_vec_Y_naval(-obs.theta_rudder) * rudder_height
         dt_rudder_start = rudder_end
-        dt_rudder_end = dt_rudder_start + obs.dt_rudder*2000 # manual scaling to be changed
+        dt_rudder_end = dt_rudder_start - obs.dt_rudder*200 # manual scaling to be changed
         cv2.arrowedLine(img,
                         tuple(dt_rudder_start.astype(int)),
                         tuple(dt_rudder_end.astype(int)),
@@ -473,7 +495,7 @@ class CV2DRenderer(AbcRender):
         
     
     
-    def draw_vessel_path(self, img, waypoints, color=(0, 0, 255), thickness=2):
+    def draw_vessel_path(self, img, waypoints, color=(0, 0, 255), thickness=1):
         """
         Draws a path given by waypoints on an img and labels each waypoint with its index.
         
@@ -507,7 +529,7 @@ class CV2DRenderer(AbcRender):
             # draw map
             self._draw_borders(img)
             self._draw_wind(img, obs)
-            self._draw_water(img, obs)
+            self._draw_current(img, obs)
             self._draw_boat(img, obs)
             self._draw_boat_heading_velocity(img, obs)
             self._draw_boat_pos_velocity(img, obs)
@@ -528,7 +550,7 @@ class CV2DRenderer(AbcRender):
             self._draw_boat_center(img, obs)
 
             self._draw_wind(img, obs)
-            self._draw_water(img, obs)
+            self._draw_current(img, obs)
             self._draw_wave(img, obs)
             self._draw_boat(img, obs)
             self._draw_boat_heading_velocity(img, obs)
@@ -539,8 +561,6 @@ class CV2DRenderer(AbcRender):
             self._draw_rudder_velocity(img, obs)
             self._draw_thrusters(img, obs)
             
-
-
     def get_render_mode(self) -> str:
         return 'rgb_array'
 
