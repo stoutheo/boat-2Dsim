@@ -7,6 +7,9 @@ from ..utils import ProfilingMeta, is_debugging_all
 from ..abstracts import AbcRender
 
 
+import marine_gym.simulators.fortran_based.fortran_sim as fortr_sim
+
+
 class Metadata(TypedDict):
     render_modes: list[str]
     render_fps: float
@@ -35,28 +38,10 @@ class VesselEnv(gym.Env, metaclass=ProfilingMeta):
 
 
 
-zero_values = {
-    'p_boat': np.zeros(2, dtype=np.float32),
-    'theta_boat': np.zeros(1, dtype=np.float32),
-    'dt_p_boat': np.zeros(2, dtype=np.float32),
-    'dt_theta_boat': np.zeros(1, dtype=np.float32),
-    'rpm_me': np.zeros(1, dtype=np.float32),
-    'dt_rpm_me': np.zeros(1, dtype=np.float32),
-    'theta_rudder': np.zeros(1, dtype=np.float32),
-    'dt_theta_rudder': np.zeros(1, dtype=np.float32),
-    'N_thrusters': np.zeros(2, dtype=np.float32),
-    'wind': np.zeros(2, dtype=np.float32),
-    'water': np.zeros(2, dtype=np.float32),
-    'wave': np.zeros(2, dtype=np.float32),
-}
-
-env_info = {
-    'map_bounds': np.array([[   -500., -500.,    0.], [ 500.,  500.,    1.]], dtype=np.float32),
-    'ref_path': np.array([(-450, -300), (-350, -100), (-200, 50), 
-                           (0, 200), (150, 300), (300, 400), 
-                           (350, 200), (200, 50), (50, -200), 
-                           (-100, -400)])
-}
+default_scenario_info = {
+                        'map_bounds': np.array([[   -500., -500.,    0.], [ 500.,  500.,    1.]], dtype=np.float32),
+                        'ref_path': None
+                    }
 
 def dummy_update(obs_dict):
     
@@ -76,13 +61,11 @@ def dummy_update(obs_dict):
     obs_dict['N_thrusters'][0] = 30000
     obs_dict['N_thrusters'][1] = 30000
 
-    
+    obs_dict['current'][0] = 45
+    obs_dict['current'][1] = 2   
 
     obs_dict['wind'][0] = 30
     obs_dict['wind'][1] = 1
-
-    obs_dict['water'][0] = 45
-    obs_dict['water'][1] = 2
 
     obs_dict['wave'][0] = 100
     obs_dict['wave'][1] = 3
@@ -90,14 +73,62 @@ def dummy_update(obs_dict):
     return obs_dict
 
 
+
+def fortran_sim_update(obs_dict, actions, simulator):
+    
+    # unwrap to match fortran simulator format
+    init_state = np.array([ obs_dict['p_boat'][0],    obs_dict['p_boat'][1],    obs_dict['theta_boat'][0],
+                            obs_dict['dt_p_boat'][0], obs_dict['dt_p_boat'][1], obs_dict['dt_theta_boat'][0],  
+                            obs_dict['rpm_me'][0], np.rad2deg(obs_dict['theta_rudder'][0]), 
+                            obs_dict['N_thrusters'][0], obs_dict['N_thrusters'][1]])
+
+    controls = np.array([ actions['c_rpm_me'][0]/60., np.rad2deg(actions['c_theta_rudder'][0]), actions['c_N_thrusters'][0], actions['c_N_thrusters'][1] ])
+    controls = np.array([ 100., -45., 30000., -30000.]) * 0.
+
+    env_cond = np.array([obs_dict['current'][0], obs_dict['current'][1], obs_dict['wind'][0], obs_dict['wind'][1]])
+
+
+    steps_of_horizon = 1
+    dt = 1.
+
+    state, _ = simulator.step(init_state, controls, env_cond, steps_of_horizon, dt, absolute_time = 0.0)
+
+    # wrap again to match animation format
+
+    obs_dict['p_boat'][0] = state[0,0]
+    obs_dict['p_boat'][1] = state[1,0]
+    obs_dict['theta_boat'][0] = state[2,0]
+
+    obs_dict['dt_p_boat'][0] = state[3,0]
+    obs_dict['dt_p_boat'][1] = state[4,0]  
+    obs_dict['dt_theta_boat'][0] = state[5,0]
+
+    obs_dict['rpm_me'][0] = state[6,0] * 60.
+
+    obs_dict['theta_rudder'][0] = np.deg2rad(state[7,0])
+    
+    obs_dict['dt_theta_rudder'][0] = np.deg2rad((state[7,0] - init_state[7])/dt)
+
+    obs_dict['N_thrusters'][0] = state[8,0]
+    obs_dict['N_thrusters'][1] = state[9,0]
+    
+    obs_dict['current'][0] = env_cond[0]
+    obs_dict['current'][1] = env_cond[1]
+
+    obs_dict['wind'][0] = env_cond[2]
+    obs_dict['wind'][1] = env_cond[3]
+
+    obs_dict['wave'][0] = 0
+    obs_dict['wave'][1] = 0
+
+    return obs_dict
+
+
 class ShipEnv(VesselEnv):
-    NB_STEPS_PER_SECONDS = 10  # Hz
+    NB_STEPS_PER_SECONDS = 1  # Hz
 
     def __init__(self, reward_fn: Callable[[Observation, Action, Observation], float] = lambda *_: 0, 
                  renderer: Union[AbcRender, None] = None, 
-                 wind_generator_fn: Union[Callable[[int], np.ndarray], None] = None, 
-                 water_generator_fn: Union[Callable[[int], np.ndarray], None] = None, 
-                 wave_generator_fn: Union[Callable[[int], np.ndarray], None] = None, 
                  video_speed: float = 1, 
                  keep_sim_alive: bool = False, 
                  name='default', 
@@ -108,8 +139,6 @@ class ShipEnv(VesselEnv):
         Args:
             reward_fn (Callable[[Observation, Action], float], optional): Use a custom reward function depending of your task. Defaults to lambda *_: 0.
             renderer (AbcRender, optional): Renderer instance to be used for rendering the environment, look at sailboat_gym/renderers folder for more information. Defaults to None.
-            wind_generator_fn (Callable[[int], np.ndarray], optional): Function that returns a 2D vector representing the global wind during the simulation. Defaults to None.
-            water_generator_fn (Callable[[int], np.ndarray], optional): Function that returns a 2D vector representing the global water current during the simulation. Defaults to None.
             video_speed (float, optional): Speed of the video recording. Defaults to 1.
             keep_sim_alive (bool, optional): Keep the simulation running even after the program exits. Defaults to False.
             name ([type], optional): Name of the simulation, required to run multiples environment on same machine.. Defaults to 'default'.
@@ -180,28 +209,29 @@ class ShipEnv(VesselEnv):
 
         self.step_idx += 1
 
-        wind = self.wind_generator_fn(self.step_idx)
-        water = self.water_generator_fn(self.step_idx)
-
         # replace this 
-        # next_obs, terminated, info = self.sim.step(wind, water, action)
-        next_obs = dummy_update(self.obs) 
-        terminated = False
-        info = env_info
+        next_obs = fortran_sim_update(self.obs, action, self.sim) 
 
+        # could implement this to terminate if the end of the reference path has been reached
+        terminated = False
+
+        # set animation scenario
+        info = {}
+
+        # could implement this to return the metric of the tracking task 
         reward = self.reward_fn(self.obs, action, next_obs)
+
         truncated = self.stop_condition_fn(self.obs, action, next_obs)
+
+        # update observations
         self.obs = next_obs
 
         if is_debugging_all():
             print('\nStepping environment:')
-            print(f'  -> Wind: {wind}')
-            print(f'  -> Water: {water}')
             print(f'  -> Action: {action}')
             print(f'  <- Obs: {self.obs}')
             print(f'  <- Reward: {reward}')
             print(f'  <- Terminated: {terminated}')
-            print(f'  <- Info: {info}')
 
         return self.obs, reward, terminated, truncated, info
 
