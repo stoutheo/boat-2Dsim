@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 env = gym.make('ShipEnv-v0', renderer=marine_gym.CV2DRenderer())
-# env = RecordVideo(env, video_folder='./output/videos/')
+env = RecordVideo(env, video_folder='./output/videos/')
 
 
 
@@ -26,16 +26,24 @@ route_info = {
             }
 
 
-for ii in range(5):
+reset_options = {
+                'scenario_info': route_info,
+                'initial_state': None,
+                'wind_generator_fn': None,
+                'current_generator_fn': None,
+                'wave_generator_fn': None,
+                }
 
-    env.reset(seed=ii, scenario_info = route_info)
+
+for ii in range(1):
+
+    env.reset(seed=ii, options = reset_options)
 
     for i in range(1000):
         act = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(act)
         if truncated:
             break
-        # env.render()
 
         # Get the RGB frame
         frame = env.render()
@@ -48,7 +56,7 @@ for ii in range(5):
 
         if cv2.waitKey(1) & 0xFF == ord('q'):  # Press 'q' to quit
             break
-    input()
+    # input()
 
 env.close()
 

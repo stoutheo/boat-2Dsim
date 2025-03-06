@@ -1,6 +1,6 @@
 import gymnasium as gym
 import numpy as np
-from typing import Any, Tuple, Callable, Type, TypedDict, Union
+from typing import Any, Tuple, Callable, Type, TypedDict, Union, Optional
 
 from ..types import GymObservation, GymAction, Observation, Action, ResetInfo
 from ..utils import ProfilingMeta, is_debugging_all
@@ -22,8 +22,8 @@ class VesselEnv(gym.Env, metaclass=ProfilingMeta):
     action_space = GymAction
     observation_space = GymObservation
 
-    def reset(self, **kwargs) -> Tuple[Observation, ResetInfo]:
-        return super().reset(**kwargs)
+    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[Observation, ResetInfo]:
+        return super().reset(seed=seed)
 
     def step(self, action: Action) -> Tuple[Observation, float, bool, Any]:
         return super().step(action)
@@ -229,24 +229,29 @@ class ShipEnv(VesselEnv):
         return obs_dict
 
     def reset(self, seed=None, 
-                    scenario_info=None, 
-                    initial_state=None, 
-                    wind_generator_fn: Union[Callable[[int], np.ndarray], None] = None, 
-                    current_generator_fn: Union[Callable[[int], np.ndarray], None] = None, 
-                    wave_generator_fn: Union[Callable[[int], np.ndarray], None] = None,     
-                    **kwargs):
+                    options=None):  
         '''
+        options get a Dict with:
 
-        current_generator_fn (Callable[[int], np.ndarray], optional): Function that returns angle and speed representing the global water current during the simulation. Defaults to None.
-        wind_generator_fn (Callable[[int], np.ndarray], optional): Function that returns angle and speed representing the global wind during the simulation. Defaults to None.
-        wave_generator_fn (Callable[[int], np.ndarray], optional): Function that returns angle and height representing the global wave during the simulation. Defaults to None.
+                scenario_info: which is a dict with
+                    {
+                    'map_bounds': np.array[] -> 2x3
+                    'ref_path': np.array[] -> Nx2, where N is the number of waypoints
+                    }
+                'initial_state': np.array[] -> 1x10 --- [x,   y,  theta,     u,     v,       r,     n,  delta, fb,   fs]
+                'current_generator_fn' (Callable[[int], np.ndarray], optional): Function that returns angle and speed representing the global water current during the simulation. Defaults to None.
+                'wind_generator_fn' (Callable[[int], np.ndarray], optional): Function that returns angle and speed representing the global wind during the simulation. Defaults to None.
+                'wave_generator_fn' (Callable[[int], np.ndarray], optional): Function that returns angle and height representing the global wave during the simulation. Defaults to None.
 
         '''
-        
-        super().reset(seed=seed, **kwargs)
-        if seed is not None:
-            np.random.seed(seed)
+        super().reset(seed=seed)
         self.step_idx = 0
+
+        scenario_info = options['scenario_info']
+        initial_state = options['initial_state']
+        wind_generator_fn = options['wind_generator_fn']
+        current_generator_fn = options['current_generator_fn']
+        wave_generator_fn = options['wave_generator_fn']
 
         # ----------------------
         #  Set vessel state 
